@@ -1,0 +1,73 @@
+version: '3.7'
+
+services:
+  lakefs:
+    image: treeverse/lakefs:latest
+    container_name: lakefs
+    ports:
+      - "8000:8000"
+    environment:
+      - LAKEFS_DATABASE_TYPE=${LAKEFS_DATABASE_TYPE}
+      - LAKEFS_DATABASE_POSTGRES_CONNECTION_STRING=${LAKEFS_DATABASE_POSTGRES_CONNECTION_STRING}
+      - LAKEFS_BLOCKSTORE_TYPE=${LAKEFS_BLOCKSTORE_TYPE}
+      - LAKEFS_BLOCKSTORE_S3_FORCE_PATH_STYLE=${LAKEFS_BLOCKSTORE_S3_FORCE_PATH_STYLE}
+      - LAKEFS_BLOCKSTORE_S3_ENDPOINT=${LAKEFS_BLOCKSTORE_S3_ENDPOINT}
+      - LAKEFS_BLOCKSTORE_S3_CREDENTIALS_ACCESS_KEY_ID=${LAKEFS_BLOCKSTORE_S3_CREDENTIALS_ACCESS_KEY_ID}
+      - LAKEFS_BLOCKSTORE_S3_CREDENTIALS_SECRET_ACCESS_KEY=${LAKEFS_BLOCKSTORE_S3_CREDENTIALS_SECRET_ACCESS_KEY}
+      - LAKEFS_BLOCKSTORE_S3_BUCKET_NAME=${LAKEFS_BLOCKSTORE_S3_BUCKET_NAME}
+      - LAKEFS_AUTH_ENCRYPT_SECRET_KEY=${LAKEFS_AUTH_ENCRYPT_SECRET_KEY}
+      - LAKEFS_LOGGING_LEVEL=${LAKEFS_LOGGING_LEVEL}
+      - LAKEFS_STATS_ENABLED=${LAKEFS_STATS_ENABLED}
+      - LAKEFS_INSTALLATION_USER_NAME=${LAKEFS_INSTALLATION_USER_NAME}
+      - LAKEFS_INSTALLATION_ACCESS_KEY_ID=${LAKEFS_INSTALLATION_ACCESS_KEY_ID}
+      - LAKEFS_INSTALLATION_SECRET_ACCESS_KEY=${LAKEFS_INSTALLATION_SECRET_ACCESS_KEY}
+      - LAKECTL_SERVER_ENDPOINT_URL=${LAKECTL_SERVER_ENDPOINT_URL}
+    depends_on:
+      - postgres
+      - minio
+      - init-minio
+    volumes:
+      - lakefs_data:/data
+
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_REGION: ${MINIO_REGION}
+    command: server /data --address :9000 --console-address :9001
+    volumes:
+      - minio_data:/data
+
+  init-minio:
+    image: amazon/aws-cli
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: >
+      "until curl -s http://minio:9000; do
+        echo 'Waiting for MinIO to start...';
+        sleep 2;
+      done; aws --endpoint-url=http://minio:9000 s3api create-bucket --bucket ${LAKEFS_BLOCKSTORE_S3_BUCKET_NAME} --region ${MINIO_REGION} --create-bucket-configuration LocationConstraint=${MINIO_REGION} && echo 'Bucket created';"
+    environment:
+      AWS_ACCESS_KEY_ID: ${MINIO_ACCESS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_SECRET_KEY}
+    depends_on:
+      - minio
+
+volumes:
+  lakefs_data:
+  postgres_data:
+  minio_data:
